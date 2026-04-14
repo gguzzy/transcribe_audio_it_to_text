@@ -10,17 +10,16 @@ from faster_whisper import WhisperModel
 import pyttsx3
 
 
-# Parametri di configurazione audio
+# parametri di configurazione audio
 SAMPLE_RATE = 16000
 CHANNELS = 1
 DTYPE = "int16"
 MODEL_NAME = "large-v3"
-COMPUTE_TYPE = "int8" # se gpu usare float16
+COMPUTE_TYPE = "int8"
+# COMPUTE_TYPE = "float16" # se gpu usare float16, cpu int8
 LANGUAGE = "it"
 
-"""
-Scelta del dispositivo di input
-"""
+# scelta del dispositivo in input
 def choose_input_device():
     devices = sd.query_devices()
     input_devices = []
@@ -32,7 +31,7 @@ def choose_input_device():
     if not input_devices:
         raise RuntimeError("Nessun dispositivo di input audio trovato.")
 
-    # Scelta da tastiera del dispositivo di input
+    # scelta da tastiera del dispositivo di input
     print("\nPremi INVIO per usare il default, oppure scrivi l'indice del microfono.")
     choice = input("Scelta: ").strip()
     if not choice:
@@ -45,6 +44,7 @@ def choose_input_device():
         raise ValueError("Il dispositivo scelto non è un input valido.")
     return device_index
 
+# registra audio sino a ricezione INVIO utente da tastiera
 def record_until_enter(device=None):
     audio_queue = queue.Queue()
     frames = []
@@ -78,6 +78,7 @@ def record_until_enter(device=None):
     audio = np.concatenate(frames, axis=0)
     return audio
 
+# salva il file audio temporaneo
 def save_temp_wav(audio_np: np.ndarray) -> Path:
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp_path = Path(tmp.name)
@@ -85,9 +86,8 @@ def save_temp_wav(audio_np: np.ndarray) -> Path:
     wav_write(tmp_path, SAMPLE_RATE, audio_np)
     return tmp_path
 
-def transcribe_audio(file_path: Path) -> str:
-    print("\nCaricamento modello ASR...")
-    model = WhisperModel(MODEL_NAME, compute_type=COMPUTE_TYPE)
+# inferenza del modello sul file audio -> restituisce transcribed text come segmenti scomposte (ciascuna parola)
+def transcribe_audio(model: WhisperModel, file_path: Path) -> str:
     print("Trascrizione in corso...")
     segments, info = model.transcribe(
         str(file_path),
@@ -101,6 +101,7 @@ def transcribe_audio(file_path: Path) -> str:
     transcript = " ".join(part for part in text_parts if part).strip()
     return transcript
 
+# text can be read aloud using italian voice generator
 def read_text_aloud(text: str):
     print("\nLettura del testo generato...")
     engine = pyttsx3.init()
@@ -121,15 +122,28 @@ def read_text_aloud(text: str):
     engine.say(text if text else "Non sono riuscito a trascrivere nulla.")
     engine.runAndWait()
 
+# store the transcribed text into a txt file
+def save_transcript(text: str):
+    with open("transcript.txt", "a") as f:
+        f.write(text)
+
+def load_model():
+    print("\nCaricamento modello ASR...")
+    model = WhisperModel(MODEL_NAME, compute_type=COMPUTE_TYPE)
+    return model
+
 def main():
     try:
+        # carica modello all'inizio
+        model = load_model()
         device = choose_input_device()
         audio = record_until_enter(device=device)
         wav_path = save_temp_wav(audio)
         print(f"\nAudio salvato temporaneamente in: {wav_path}")
-        text = transcribe_audio(wav_path)
+        text = transcribe_audio(model, wav_path)
         print("\n\n\nTESTO TRASCRITTO\n\n")
         print(text if text else "[vuoto]")
+        save_transcript(text)
         if text:
             answer = input("\nVuoi che lo legga ad alta voce? [s/N]: ").strip().lower()
             if answer == "s":
@@ -138,6 +152,8 @@ def main():
         print("\nInterruzione da tastiera o chiusura anticipata da utente.")
     except Exception as e:
         print(f"\nErrore: {e}")
+
+
 
 if __name__ == "__main__":
     main()
